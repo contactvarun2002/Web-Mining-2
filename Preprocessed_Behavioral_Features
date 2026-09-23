@@ -1,0 +1,508 @@
+# ================================================================
+# PROCESS 1
+# PREPROCESSING + BEHAVIORAL FEATURE CONSTRUCTION
+# ================================================================
+
+!pip -q install pandas numpy matplotlib seaborn scikit-learn openpyxl
+
+import os
+import re
+import random
+import warnings
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+
+warnings.filterwarnings("ignore")
+
+SEED = 42
+
+np.random.seed(SEED)
+random.seed(SEED)
+
+print("=" * 70)
+print("PROCESS 1 - PREPROCESSING")
+print("=" * 70)
+
+
+# ================================================================
+# 1. LOAD DATA
+# ================================================================
+
+possible_paths = [
+    "/content/drive/MyDrive/Web mining files/online_classroom_data.csv",
+]
+
+INPUT_FILE = None
+
+for path in possible_paths:
+    if os.path.exists(path):
+        INPUT_FILE = path
+        break
+
+if INPUT_FILE is None:
+
+    from google.colab import files
+
+    print("Upload online_classroom_data.csv")
+
+    uploaded = files.upload()
+
+    csv_files = [
+        f for f in uploaded.keys()
+        if f.lower().endswith(".csv")
+    ]
+
+    if len(csv_files) == 0:
+        raise FileNotFoundError(
+            "No CSV file was uploaded."
+        )
+
+    INPUT_FILE = "/content/" + csv_files[0]
+
+
+print("Input file:", INPUT_FILE)
+
+
+# ================================================================
+# 2. READ DATA
+# ================================================================
+
+df_raw = pd.read_csv(INPUT_FILE)
+
+print("\nRaw dataset shape:", df_raw.shape)
+
+print("\nColumns:")
+print(df_raw.columns.tolist())
+
+display(df_raw.head())
+
+
+# ================================================================
+# 3. REMOVE UNNECESSARY COLUMNS
+# ================================================================
+
+index_like_columns = [
+    col
+    for col in df_raw.columns
+    if str(col).lower().startswith("unnamed")
+]
+
+df = df_raw.drop(
+    columns=index_like_columns,
+    errors="ignore"
+).copy()
+
+
+# ================================================================
+# 4. REMOVE DUPLICATES
+# ================================================================
+
+before = len(df)
+
+df = df.drop_duplicates().reset_index(drop=True)
+
+after = len(df)
+
+print(
+    "\nDuplicate rows removed:",
+    before - after
+)
+
+
+# ================================================================
+# 5. NUMERIC COLUMNS
+# ================================================================
+
+numeric_columns = [
+    "total_posts",
+    "helpful_post",
+    "nice_code_post",
+    "collaborative_post",
+    "confused_post",
+    "creative_post",
+    "bad_post",
+    "amazing_post",
+    "timeonline",
+    "Approved"
+]
+
+for col in numeric_columns:
+
+    if col in df.columns:
+
+        df[col] = pd.to_numeric(
+            df[col],
+            errors="coerce"
+        )
+
+
+# ================================================================
+# 6. CLASSROOM SKILL PARSING
+# ================================================================
+
+skill_columns = [
+    "sk1_classroom",
+    "sk2_classroom",
+    "sk5_classroom",
+    "sk3_classroom",
+    "sk4_classroom"
+]
+
+
+def parse_skill_value(value):
+
+    if pd.isna(value):
+        return np.nan
+
+    value = str(value).strip()
+
+    if value == "":
+        return np.nan
+
+    try:
+        return float(value)
+
+    except:
+
+        parts = re.findall(
+            r"-?\d+(?:\.\d+)?",
+            value
+        )
+
+        if len(parts) == 0:
+            return np.nan
+
+        numbers = [
+            float(x)
+            for x in parts
+        ]
+
+        return np.mean(numbers)
+
+
+for col in skill_columns:
+
+    if col in df.columns:
+
+        df[col + "_Numeric"] = (
+            df[col].apply(
+                parse_skill_value
+            )
+        )
+
+
+# ================================================================
+# 7. INVALID VALUE HANDLING
+# ================================================================
+
+behavior_raw_columns = [
+    "total_posts",
+    "helpful_post",
+    "nice_code_post",
+    "collaborative_post",
+    "confused_post",
+    "creative_post",
+    "bad_post",
+    "amazing_post",
+    "timeonline"
+]
+
+for col in behavior_raw_columns:
+
+    if col in df.columns:
+
+        df.loc[
+            df[col] < 0,
+            col
+        ] = np.nan
+
+
+# ================================================================
+# 8. MISSING VALUE IMPUTATION
+# ================================================================
+
+for col in df.select_dtypes(
+    include=np.number
+).columns:
+
+    if col == "Approved":
+        continue
+
+    median_value = df[col].median()
+
+    if pd.isna(median_value):
+        median_value = 0
+
+    df[col] = df[col].fillna(
+        median_value
+    )
+
+
+# ================================================================
+# 9. BEHAVIORAL FEATURE CONSTRUCTION
+# ================================================================
+
+posts = df["total_posts"].replace(
+    0,
+    np.nan
+)
+
+
+df["Total_Interaction_Count"] = (
+    df[
+        [
+            "total_posts",
+            "helpful_post",
+            "nice_code_post",
+            "collaborative_post",
+            "confused_post",
+            "creative_post",
+            "bad_post",
+            "amazing_post"
+        ]
+    ].sum(axis=1)
+)
+
+
+df["Average_Post_Activity"] = (
+    df["Total_Interaction_Count"] / 7
+)
+
+
+df["Helpful_Post_Rate"] = (
+    df["helpful_post"] / posts
+)
+
+df["Nice_Code_Post_Rate"] = (
+    df["nice_code_post"] / posts
+)
+
+df["Collaborative_Post_Rate"] = (
+    df["collaborative_post"] / posts
+)
+
+df["Confusion_Post_Rate"] = (
+    df["confused_post"] / posts
+)
+
+df["Creative_Post_Rate"] = (
+    df["creative_post"] / posts
+)
+
+df["Negative_Post_Rate"] = (
+    df["bad_post"] / posts
+)
+
+df["Amazing_Post_Rate"] = (
+    df["amazing_post"] / posts
+)
+
+
+df["Positive_Engagement_Count"] = (
+    df["helpful_post"]
+    + df["nice_code_post"]
+    + df["collaborative_post"]
+    + df["creative_post"]
+    + df["amazing_post"]
+)
+
+
+df["Positive_Engagement_Rate"] = (
+    df["Positive_Engagement_Count"] / posts
+)
+
+
+df["Help_Seeking_Negative_Count"] = (
+    df["helpful_post"]
+    + df["confused_post"]
+)
+
+
+df["Help_Seeking_Negative_Rate"] = (
+    df["Help_Seeking_Negative_Count"] / posts
+)
+
+
+df["Time_Online_Minutes"] = (
+    df["timeonline"]
+)
+
+
+df["Time_Per_Post"] = (
+    df["timeonline"] / posts
+)
+
+
+df["Interaction_Density"] = (
+    df["Total_Interaction_Count"]
+    / (df["timeonline"] + 1)
+)
+
+
+# ================================================================
+# 10. CLASSROOM SKILL FEATURES
+# ================================================================
+
+numeric_skill_columns = [
+    col + "_Numeric"
+    for col in skill_columns
+    if col in df.columns
+]
+
+
+df["Classroom_Skill_Mean"] = (
+    df[numeric_skill_columns].mean(axis=1)
+)
+
+df["Classroom_Skill_Std"] = (
+    df[numeric_skill_columns].std(axis=1)
+)
+
+df["Classroom_Skill_Max"] = (
+    df[numeric_skill_columns].max(axis=1)
+)
+
+df["Classroom_Skill_Min"] = (
+    df[numeric_skill_columns].min(axis=1)
+)
+
+df["Classroom_Skill_Range"] = (
+    df["Classroom_Skill_Max"]
+    - df["Classroom_Skill_Min"]
+)
+
+
+# ================================================================
+# 11. CLEAN INFINITY / MISSING VALUES
+# ================================================================
+
+df = df.replace(
+    [np.inf, -np.inf],
+    np.nan
+)
+
+
+for col in df.select_dtypes(
+    include=np.number
+).columns:
+
+    if col == "Approved":
+        continue
+
+    df[col] = df[col].fillna(
+        df[col].median()
+    )
+
+
+# ================================================================
+# 12. BEHAVIORAL FEATURE LIST
+# ================================================================
+
+behavioral_features = [
+
+    "Total_Interaction_Count",
+    "Average_Post_Activity",
+
+    "Helpful_Post_Rate",
+    "Nice_Code_Post_Rate",
+    "Collaborative_Post_Rate",
+    "Confusion_Post_Rate",
+    "Creative_Post_Rate",
+    "Negative_Post_Rate",
+    "Amazing_Post_Rate",
+
+    "Positive_Engagement_Count",
+    "Positive_Engagement_Rate",
+
+    "Help_Seeking_Negative_Count",
+    "Help_Seeking_Negative_Rate",
+
+    "Time_Online_Minutes",
+    "Time_Per_Post",
+    "Interaction_Density",
+
+    "Classroom_Skill_Mean",
+    "Classroom_Skill_Std",
+    "Classroom_Skill_Max",
+    "Classroom_Skill_Min",
+    "Classroom_Skill_Range"
+]
+
+
+behavioral_features = [
+    f
+    for f in behavioral_features
+    if f in df.columns
+]
+
+
+# ================================================================
+# 13. INPUT / TARGET
+# ================================================================
+
+X_behavior = df[
+    behavioral_features
+].copy()
+
+y = df["Approved"].astype(int)
+
+
+print("\n" + "=" * 70)
+print("PREPROCESSING RESULT")
+print("=" * 70)
+
+print("Learners :", len(df))
+print("Features :", X_behavior.shape[1])
+print("Target   :", "Approved")
+
+print("\nTarget distribution:")
+print(y.value_counts())
+
+
+# ================================================================
+# 14. SAVE PREPROCESSED DATA
+# ================================================================
+
+PREPROCESSED_FILE = (
+    "/content/drive/MyDrive/"
+    "Preprocessed_Behavioral_Features.csv"
+)
+
+df.to_csv(
+    PREPROCESSED_FILE,
+    index=False
+)
+
+print(
+    "\nSaved:",
+    PREPROCESSED_FILE
+)
+
+
+# ================================================================
+# 15. CORRELATION VISUALIZATION
+# ================================================================
+
+plt.figure(figsize=(15, 10))
+
+sns.heatmap(
+    X_behavior.corr(),
+    cmap="coolwarm",
+    center=0
+)
+
+plt.title(
+    "Behavioral Feature Correlation Matrix"
+)
+
+plt.tight_layout()
+plt.show()
+
+
+print("\nPROCESS 1 COMPLETED.")
