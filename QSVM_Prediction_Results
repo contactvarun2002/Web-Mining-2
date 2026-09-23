@@ -1,0 +1,612 @@
+# ================================================================
+# PROCESS 4
+# PREDICTION + EVALUATION + EXPLAINABILITY
+# ================================================================
+
+!pip -q install shap lime
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    classification_report,
+    confusion_matrix,
+    roc_auc_score,
+    roc_curve
+)
+
+print("=" * 70)
+print("PROCESS 4 - PREDICTION")
+print("=" * 70)
+
+
+# ================================================================
+# 1. PREPARE HYPERGRAPH DATA
+# ================================================================
+
+X_qsvm = hypergraph_representation
+
+y_hyper = (
+    y_train
+    .reset_index(drop=True)
+)
+
+
+# ================================================================
+# 2. QSVM TRAIN / TEST SPLIT
+# ================================================================
+
+X_q_train, X_q_test, y_q_train, y_q_test = (
+    train_test_split(
+        X_qsvm,
+        y_hyper,
+        test_size=0.25,
+        stratify=y_hyper,
+        random_state=SEED
+    )
+)
+
+
+# ================================================================
+# 3. STANDARDIZATION
+# ================================================================
+
+qsvm_scaler = StandardScaler()
+
+X_q_train_scaled = (
+    qsvm_scaler.fit_transform(
+        X_q_train
+    )
+)
+
+X_q_test_scaled = (
+    qsvm_scaler.transform(
+        X_q_test
+    )
+)
+
+
+# ================================================================
+# 4. QUADRATIC SVM
+# ================================================================
+
+qsvm = SVC(
+
+    kernel="poly",
+
+    degree=2,
+
+    C=1.0,
+
+    gamma="scale",
+
+    probability=True,
+
+    random_state=SEED
+)
+
+
+qsvm.fit(
+    X_q_train_scaled,
+    y_q_train
+)
+
+
+# ================================================================
+# 5. PREDICTION
+# ================================================================
+
+qsvm_predictions = (
+    qsvm.predict(
+        X_q_test_scaled
+    )
+)
+
+
+qsvm_probabilities = (
+    qsvm.predict_proba(
+        X_q_test_scaled
+    )[:, 1]
+)
+
+
+# ================================================================
+# 6. EVALUATION
+# ================================================================
+
+accuracy = accuracy_score(
+    y_q_test,
+    qsvm_predictions
+)
+
+precision = precision_score(
+    y_q_test,
+    qsvm_predictions,
+    zero_division=0
+)
+
+recall = recall_score(
+    y_q_test,
+    qsvm_predictions,
+    zero_division=0
+)
+
+f1 = f1_score(
+    y_q_test,
+    qsvm_predictions,
+    zero_division=0
+)
+
+
+if len(np.unique(y_q_test)) == 2:
+
+    auc = roc_auc_score(
+        y_q_test,
+        qsvm_probabilities
+    )
+
+else:
+
+    auc = np.nan
+
+
+print("\n" + "=" * 70)
+print("QSVM RESULTS")
+print("=" * 70)
+
+print(
+    f"Accuracy : {accuracy:.4f}"
+)
+
+print(
+    f"Precision: {precision:.4f}"
+)
+
+print(
+    f"Recall   : {recall:.4f}"
+)
+
+print(
+    f"F1-score : {f1:.4f}"
+)
+
+print(
+    f"ROC-AUC  : {auc:.4f}"
+)
+
+
+print("\nClassification Report:")
+
+print(
+    classification_report(
+        y_q_test,
+        qsvm_predictions,
+        zero_division=0
+    )
+)
+
+
+# ================================================================
+# 7. CONFUSION MATRIX
+# ================================================================
+
+cm = confusion_matrix(
+    y_q_test,
+    qsvm_predictions
+)
+
+
+plt.figure(figsize=(6, 5))
+
+sns.heatmap(
+    cm,
+    annot=True,
+    fmt="d",
+    cmap="Blues"
+)
+
+plt.xlabel(
+    "Predicted"
+)
+
+plt.ylabel(
+    "Actual"
+)
+
+plt.title(
+    "Quadratic SVM Confusion Matrix"
+)
+
+plt.show()
+
+
+# ================================================================
+# 8. ROC CURVE
+# ================================================================
+
+if len(np.unique(y_q_test)) == 2:
+
+    fpr, tpr, thresholds = (
+        roc_curve(
+            y_q_test,
+            qsvm_probabilities
+        )
+    )
+
+
+    plt.figure(figsize=(7, 5))
+
+    plt.plot(
+        fpr,
+        tpr,
+        label=f"AUC = {auc:.3f}"
+    )
+
+    plt.plot(
+        [0, 1],
+        [0, 1],
+        linestyle="--"
+    )
+
+    plt.xlabel(
+        "False Positive Rate"
+    )
+
+    plt.ylabel(
+        "True Positive Rate"
+    )
+
+    plt.title(
+        "Quadratic SVM ROC Curve"
+    )
+
+    plt.legend()
+
+    plt.grid(True)
+
+    plt.show()
+
+
+# ================================================================
+# 9. RESULTS TABLE
+# ================================================================
+
+prediction_results = pd.DataFrame({
+
+    "Metric": [
+
+        "Number of learners",
+        "Hypergraph features",
+        "Accuracy",
+        "Precision",
+        "Recall",
+        "F1-score",
+        "ROC-AUC"
+    ],
+
+    "Value": [
+
+        len(y_q_test),
+        X_q_train_scaled.shape[1],
+        accuracy,
+        precision,
+        recall,
+        f1,
+        auc
+    ]
+})
+
+
+display(
+    prediction_results
+)
+
+
+# ================================================================
+# 10. SHAP
+# ================================================================
+
+print("\nGenerating SHAP explanation...")
+
+
+try:
+
+    import shap
+
+    background_size = min(
+        15,
+        len(X_q_train_scaled)
+    )
+
+    background = (
+        X_q_train_scaled[
+            :background_size
+        ]
+    )
+
+
+    def predict_probability(data):
+
+        return qsvm.predict_proba(
+            data
+        )[:, 1]
+
+
+    explainer = shap.KernelExplainer(
+        predict_probability,
+        background
+    )
+
+
+    explain_size = min(
+        10,
+        len(X_q_test_scaled)
+    )
+
+
+    shap_values = (
+        explainer.shap_values(
+            X_q_test_scaled[
+                :explain_size
+            ],
+            nsamples=100
+        )
+    )
+
+
+    if isinstance(
+        shap_values,
+        list
+    ):
+
+        shap_array = shap_values[0]
+
+    else:
+
+        shap_array = shap_values
+
+
+    plt.figure()
+
+    shap.summary_plot(
+
+        shap_array,
+
+        X_q_test_scaled[
+            :explain_size
+        ],
+
+        feature_names=[
+            f"Hypergraph_Feature_{i+1}"
+            for i in range(
+                X_q_train_scaled.shape[1]
+            )
+        ],
+
+        show=False
+    )
+
+    plt.title(
+        "SHAP Learner Behavior Explanation"
+    )
+
+    plt.tight_layout()
+
+    plt.show()
+
+
+except Exception as e:
+
+    print(
+        "SHAP error:",
+        e
+    )
+
+
+# ================================================================
+# 11. LIME
+# ================================================================
+
+print(
+    "\nGenerating LIME explanation..."
+)
+
+
+try:
+
+    from lime.lime_tabular import (
+        LimeTabularExplainer
+    )
+
+
+    feature_names = [
+        f"Hypergraph_Feature_{i+1}"
+        for i in range(
+            X_q_train_scaled.shape[1]
+        )
+    ]
+
+
+    lime_explainer = (
+        LimeTabularExplainer(
+
+            X_q_train_scaled,
+
+            feature_names=
+            feature_names,
+
+            class_names=[
+                "Not Approved",
+                "Approved"
+            ],
+
+            mode="classification",
+
+            random_state=SEED
+        )
+    )
+
+
+    if len(X_q_test_scaled) > 0:
+
+        lime_exp = (
+            lime_explainer.explain_instance(
+
+                X_q_test_scaled[0],
+
+                qsvm.predict_proba,
+
+                num_features=min(
+                    10,
+                    X_q_train_scaled.shape[1]
+                )
+            )
+        )
+
+
+        print(
+            "\nLIME explanation:"
+        )
+
+
+        for feature, weight in (
+            lime_exp.as_list()
+        ):
+
+            print(
+                f"{feature}: "
+                f"{weight:.5f}"
+            )
+
+
+        lime_fig = (
+            lime_exp.as_pyplot_figure()
+        )
+
+        plt.tight_layout()
+
+        plt.show()
+
+
+except Exception as e:
+
+    print(
+        "LIME error:",
+        e
+    )
+
+
+# ================================================================
+# 12. SAVE PREDICTION RESULTS
+# ================================================================
+
+prediction_output = pd.DataFrame({
+
+    "Actual_Approved":
+        y_q_test.values,
+
+    "Predicted_Approved":
+        qsvm_predictions,
+
+    "Approved_Probability":
+        qsvm_probabilities
+})
+
+
+PREDICTION_FILE = (
+    "/content/drive/MyDrive/Web mining files/"
+    "QSVM_Prediction_Results.xlsx"
+)
+
+
+with pd.ExcelWriter(
+    PREDICTION_FILE,
+    engine="openpyxl"
+) as writer:
+
+    prediction_output.to_excel(
+        writer,
+        sheet_name="Predictions",
+        index=False
+    )
+
+    prediction_results.to_excel(
+        writer,
+        sheet_name="Metrics",
+        index=False
+    )
+
+    pd.DataFrame(
+        cm
+    ).to_excel(
+        writer,
+        sheet_name="Confusion_Matrix",
+        index=False
+    )
+
+
+print(
+    "\nSaved:",
+    PREDICTION_FILE
+)
+
+print("\nPROCESS 4 COMPLETED.")
+
+
+# ================================================================
+# FINAL PIPELINE
+# ================================================================
+
+print("\n")
+print("=" * 70)
+print("COMPLETE PIPELINE FINISHED")
+print("=" * 70)
+
+print("""
+PROCESS 1
+Preprocessing
+      ↓
+Behavioral Feature Construction
+      ↓
+
+PROCESS 2
+Quantum Feature Encoding
+      ↓
+Variational Quantum Circuit
+      ↓
+Quantum Representation
+      ↓
+Temporal Behavioral Representation
+      ↓
+
+PROCESS 3
+Learner Similarity
+      ↓
+Hyperedge Construction
+      ↓
+Hypergraph Aggregation
+      ↓
+Spectral Clustering
+      ↓
+
+PROCESS 4
+Quadratic SVM
+      ↓
+Approved Prediction
+      ↓
+Accuracy / Precision / Recall / F1 / ROC-AUC
+      ↓
+Confusion Matrix
+      ↓
+SHAP + LIME
+""")
