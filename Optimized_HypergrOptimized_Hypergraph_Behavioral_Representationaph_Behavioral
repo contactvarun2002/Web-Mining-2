@@ -1,0 +1,362 @@
+# ================================================================
+# PROCESS 3
+# OPTIMIZATION + HIGHER-ORDER RELATIONAL MODELING
+# ================================================================
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.neighbors import NearestNeighbors
+from sklearn.cluster import SpectralClustering
+from sklearn.decomposition import PCA
+
+print("=" * 70)
+print("PROCESS 3 - OPTIMIZATION / HYPERGRAPH MODELING")
+print("=" * 70)
+
+
+# ================================================================
+# 1. ALIGN TRAINING TEMPORAL REPRESENTATION
+# ================================================================
+
+train_temporal = (
+    temporal_representation[
+        X_train_b.index
+    ]
+)
+
+
+# ================================================================
+# 2. COMBINE QUANTUM + TEMPORAL REPRESENTATIONS
+# ================================================================
+
+combined_representation = np.hstack([
+    Q_train,
+    train_temporal
+])
+
+
+print(
+    "\nCombined representation:",
+    combined_representation.shape
+)
+
+
+# ================================================================
+# 3. LEARNER SIMILARITY
+# ================================================================
+
+similarity_matrix = (
+    cosine_similarity(
+        combined_representation
+    )
+)
+
+np.fill_diagonal(
+    similarity_matrix,
+    0
+)
+
+
+# ================================================================
+# 4. K-NEAREST LEARNER RELATIONSHIPS
+# ================================================================
+
+K_NEIGHBORS = min(
+    5,
+    len(combined_representation) - 1
+)
+
+
+neighbors_model = (
+    NearestNeighbors(
+        n_neighbors=K_NEIGHBORS + 1,
+        metric="cosine"
+    )
+)
+
+
+neighbors_model.fit(
+    combined_representation
+)
+
+
+distances, neighbor_indices = (
+    neighbors_model.kneighbors(
+        combined_representation
+    )
+)
+
+
+# ================================================================
+# 5. CONSTRUCT HYPEREDGES
+# ================================================================
+
+hyperedges = []
+
+for i in range(
+    len(combined_representation)
+):
+
+    members = neighbor_indices[i]
+
+    hyperedges.append(
+        list(members)
+    )
+
+
+print(
+    "Number of hyperedges:",
+    len(hyperedges)
+)
+
+
+# ================================================================
+# 6. HYPERGRAPH AGGREGATION
+# ================================================================
+
+hypergraph_representation = (
+    combined_representation.copy()
+)
+
+
+for i in range(
+    len(combined_representation)
+):
+
+    members = hyperedges[i]
+
+    neighbor_mean = (
+        combined_representation[
+            members
+        ].mean(axis=0)
+    )
+
+
+    hypergraph_representation[i] = (
+
+        0.5
+        * combined_representation[i]
+
+        +
+
+        0.5
+        * neighbor_mean
+    )
+
+
+print(
+    "\nHypergraph representation:",
+    hypergraph_representation.shape
+)
+
+
+# ================================================================
+# 7. HYPERGRAPH VISUALIZATION
+# ================================================================
+
+hyper_pca = PCA(
+    n_components=2,
+    random_state=SEED
+)
+
+hyper_2d = (
+    hyper_pca.fit_transform(
+        hypergraph_representation
+    )
+)
+
+
+plt.figure(figsize=(8, 6))
+
+plt.scatter(
+    hyper_2d[:, 0],
+    hyper_2d[:, 1],
+    c=y_train,
+    cmap="viridis",
+    s=70
+)
+
+plt.xlabel(
+    "Hypergraph Component 1"
+)
+
+plt.ylabel(
+    "Hypergraph Component 2"
+)
+
+plt.title(
+    "Higher-Order Learner Relational Representation"
+)
+
+plt.colorbar(
+    label="Approved"
+)
+
+plt.grid(True)
+
+plt.show()
+
+
+# ================================================================
+# 8. SPECTRAL CLUSTERING
+# ================================================================
+
+spectral_similarity = (
+    cosine_similarity(
+        hypergraph_representation
+    )
+)
+
+
+spectral_similarity = np.maximum(
+    spectral_similarity,
+    0
+)
+
+
+np.fill_diagonal(
+    spectral_similarity,
+    1
+)
+
+
+spectral_model = SpectralClustering(
+    n_clusters=2,
+    affinity="precomputed",
+    assign_labels="kmeans",
+    random_state=SEED
+)
+
+
+cluster_labels = (
+    spectral_model.fit_predict(
+        spectral_similarity
+    )
+)
+
+
+print(
+    "\nSpectral cluster distribution:"
+)
+
+print(
+    pd.Series(
+        cluster_labels
+    ).value_counts()
+)
+
+
+# ================================================================
+# 9. CLUSTER VISUALIZATION
+# ================================================================
+
+plt.figure(figsize=(8, 6))
+
+plt.scatter(
+    hyper_2d[:, 0],
+    hyper_2d[:, 1],
+    c=cluster_labels,
+    cmap="tab10",
+    s=80
+)
+
+plt.xlabel(
+    "Hypergraph Component 1"
+)
+
+plt.ylabel(
+    "Hypergraph Component 2"
+)
+
+plt.title(
+    "Spectral Clustering of Learner Behavioral States"
+)
+
+plt.colorbar(
+    label="Cluster"
+)
+
+plt.grid(True)
+
+plt.show()
+
+
+# ================================================================
+# 10. OPTIMIZATION SUMMARY
+# ================================================================
+
+optimization_results = pd.DataFrame({
+
+    "Optimization_Component": [
+
+        "Learner Similarity",
+        "K-Nearest Neighbor Search",
+        "Hyperedge Construction",
+        "Hypergraph Aggregation",
+        "Spectral Clustering"
+    ],
+
+    "Purpose": [
+
+        "Measure behavioral similarity",
+        "Identify related learners",
+        "Construct higher-order learner groups",
+        "Aggregate relational information",
+        "Discover learner behavioral groups"
+    ]
+})
+
+
+display(
+    optimization_results
+)
+
+
+# ================================================================
+# 11. SAVE OPTIMIZATION OUTPUT
+# ================================================================
+
+OPTIMIZATION_FILE = (
+    "/content/drive/MyDrive/Web mining files/"
+    "Optimized_Hypergraph_Behavioral_Representation.xlsx"
+)
+
+
+with pd.ExcelWriter(
+    OPTIMIZATION_FILE,
+    engine="openpyxl"
+) as writer:
+
+    pd.DataFrame(
+        hypergraph_representation
+    ).to_excel(
+        writer,
+        sheet_name="Hypergraph_Features",
+        index=False
+    )
+
+    pd.DataFrame({
+        "Spectral_Cluster":
+        cluster_labels
+    }).to_excel(
+        writer,
+        sheet_name="Clusters",
+        index=False
+    )
+
+    optimization_results.to_excel(
+        writer,
+        sheet_name="Optimization_Summary",
+        index=False
+    )
+
+
+print(
+    "\nSaved:",
+    OPTIMIZATION_FILE
+)
+
+print("\nPROCESS 3 COMPLETED.")
